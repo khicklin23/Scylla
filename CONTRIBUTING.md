@@ -29,7 +29,7 @@ Kali-like environment.
 
 1. Branch from `main`.
 2. Keep changes focused; one logical change per PR.
-3. Match the existing style — the server is intentionally dependency-light and
+3. Match the existing style; the server is intentionally dependency-light and
    readable.
 4. Update [`docs/tools.md`](./docs/tools.md) and the README tool table if you
    add, remove, or change a tool.

@@ -13,7 +13,7 @@ until the session is reset. This is the **default** path for assessment work.
 
 ### `terminal(command, wait_seconds=0.8)`
 Execute a command in the persistent terminal and return newly produced output.
-If the command launches an interactive program, the terminal stays active —
+If the command launches an interactive program, the terminal stays active, so
 respond with `terminal_input`.
 
 ### `terminal_read(wait_seconds=0.8)`
@@ -21,7 +21,7 @@ Drain output that has arrived since the last interaction, without sending a
 command. Useful when a long-running command is still producing output.
 
 ### `terminal_input(text="", press_enter=True, wait_seconds=0.8)`
-Send input to the current terminal — a password, menu selection, confirmation,
+Send input to the current terminal: a password, menu selection, confirmation,
 or any shell input the running program is waiting for.
 
 ### `reset_terminal()`
@@ -40,7 +40,7 @@ changes, and running programs are discarded on return. Intended only for
 commands known to be fully non-interactive where isolation is useful.
 
 Every call is appended to `~/kali-mcp/command-log.jsonl` with timestamp,
-command, exit code, and truncated stdout/stderr — this is the evidence trail.
+command, exit code, and truncated stdout/stderr. This is the evidence trail.
 
 ---
 
@@ -77,5 +77,5 @@ assessment folder. `limit` is clamped to `1..50`.
 
 - Output returned to the model is truncated (tail) to keep responses compact.
 - The persistent terminal and disposable runner are **separate** execution
-  contexts — state does not carry between them.
+  contexts, so state does not carry between them.
 - Treat tool output as the source of truth; do not infer success without it.

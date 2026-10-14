@@ -10,7 +10,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ### Added
 - Reframed the repository as a **project debrief** on LLM reasoning applied to
   offensive security, rather than a usage manual.
-- `docs/the-persistent-terminal-problem.md` — the centerpiece write-up of the
+- `docs/the-persistent-terminal-problem.md`: the centerpiece write-up of the
   core engineering challenge (stateful shell vs. stateless inference).
 - Architecture overview showing the host → VM → Kali → MCP-server topology and
   the single authenticated channel between them.

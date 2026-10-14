@@ -9,190 +9,193 @@
   ╚══════╝ ╚═════╝   ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝
 ```
 
-### Neural reasoning, wired into a Kali box — a project debrief
+### Wiring a local reasoning model into a Kali box. A project debrief.
 
 <p>
   <img alt="type" src="https://img.shields.io/badge/type-project%20debrief-6E56CF">
   <img alt="domain" src="https://img.shields.io/badge/domain-AI%20%2B%20offensive%20security-111">
   <img alt="protocol" src="https://img.shields.io/badge/protocol-MCP-6E56CF">
-  <img alt="framework" src="https://img.shields.io/badge/framework-FastMCP-0A7E8C">
   <img alt="scope" src="https://img.shields.io/badge/scope-authorized%20lab%20only-red">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-<em>What happens when you stop prompting a model about hacking and actually hand
-it the terminal? Scylla is the write-up of finding out — and of the plumbing
-that turned out to be the real work.</em>
+<em>What happens when you stop asking a model about hacking and actually hand it
+the terminal? This is the write-up of finding out, and of the plumbing that
+turned out to be the real work.</em>
 
 </div>
 
 ---
 
 > [!NOTE]
-> **This repo is a debrief, not a product.** It documents an experiment in
-> driving a Kali Linux VM with a local reasoning model over the
-> [Model Context Protocol](https://modelcontextprotocol.io), what worked, and —
-> more usefully — what *didn't* until it was engineered to. There's a
-> [run-it-yourself](#running-it-yourself) section too, but the point is the
-> lessons, not the tool.
+> This repo is a debrief, not a product. It's a record of an experiment: driving
+> a Kali Linux VM with a local reasoning model, what worked, and (more usefully)
+> what kept breaking until it got engineered properly. There's a short
+> [run-it-yourself](#running-it-yourself) section near the bottom, but the point
+> here is the lessons, not the tool.
 
 > [!WARNING]
-> **Authorized use only.** Everything here was built and run against CTF targets
-> and self-owned lab machines. Only point it at systems you own or are explicitly
-> authorized to test. See [`SECURITY.md`](./SECURITY.md).
+> Authorized use only. Everything here was built and run against practice CTF
+> targets and lab machines we owned. Only point it at systems you own or are
+> explicitly allowed to test. See [`SECURITY.md`](./SECURITY.md).
 
 ---
 
-## The thesis
+## The idea
 
-A large reasoning model already *knows* offensive security. It doesn't need to
-be taught what an SUID binary is, how to read an `nmap` scan, or what to try when
-it finds a writable cron script. The training is there.
+A good reasoning model already knows offensive security. You don't have to teach
+it what a setuid binary is, or how to read an nmap scan, or what to try when it
+finds a cron job it can write to. That knowledge is baked in.
 
-So the interesting question was never "does the model know enough?" It was:
+So the question was never "does the model know enough?" It was more like:
 
-> **Can the model's reasoning actually stay in contact with a live machine long
-> enough, and tightly enough, to _use_ what it knows?**
+> Can the model's reasoning actually stay in contact with a live machine long
+> enough, and closely enough, to *use* what it already knows?
 
-That reframes the whole project. The bottleneck isn't knowledge. It's the loop —
-the integration between a model that thinks in tokens and a shell that lives in
-state. Most of the real engineering in Scylla went into that seam, not into the
-hacking.
+That turned the project on its head. The hard part wasn't the hacking. It was
+the seam between a model that thinks in short, stateless bursts and a shell that
+lives in state and keeps running after you walk away from it. Almost all of the
+real work went into that seam.
 
 ---
 
-## Two kinds of work, and where each one wins
+## Two kinds of work, and who's better at each
 
-Spend time watching an agent solve a CTF and a split appears. Offensive security
-is really two different jobs braided together:
+Watch an agent work a CTF for a while and a split shows up. Offensive security is
+really two jobs tangled together.
 
-| | **Deterministic traversal** | **Open-ended reasoning** |
+One is just moving around. Change into a directory, list it, read a file, back
+out, open the next of thirty folders. For a person this is almost free: your
+eyes skim, your hands move, you barely think about it.
+
+The other is the actual thinking. These three findings chain into a way in.
+That odd service is worth a closer look. This is where the model is strong, and
+where a person slows down.
+
+| | Moving around | Thinking it through |
 |---|---|---|
-| What it looks like | `cd`, `ls`, read a file, back out, try the next of thirty folders | "these three findings chain into a privesc" |
-| Who's good at it | **Humans.** Fast, cheap, almost reflexive — eyes skim, hands move | **The model.** Idea generation, hypothesis forming, connecting scattered clues |
-| Cost per step | Near zero for a person | One full command → output → analyze → **generate tokens** per step |
-| Where it drags | Tedious but trivial for us | Slow and expensive for us; the model doesn't tire |
+| Looks like | `cd`, `ls`, read, back out, repeat | "these findings chain into a foothold" |
+| Humans | fast, cheap, almost reflexive | slower, we get tired |
+| The model | one command, read output, then a whole thinking step just to pick the next `ls` | strong, and it never gets bored |
 
-This is the crux. When the task is *"glance through a dozen directories and
-notice the odd one out,"* a human is wildly more efficient than a model that must
-run one command, read the output, and spend an inference pass to decide the next
-`ls`. The model shines at the opposite end — **problem-solving, idea generation,
-seeing the chain** — where a human slows down.
+That gap is the whole point. When the task is "glance through a dozen folders
+and notice the weird one," a person runs circles around a model that has to run
+a command, read it, and spend a full reasoning step deciding where to look next.
+The model wins at the other end, the part where you have to actually reason about
+a path.
 
-Scylla's working belief is that **the future of offensive security is combining
-the two**: let the model reason about the path, but give it an interface where
-the cheap, deterministic browsing doesn't cost a full reasoning cycle every
-step. A lot of the design decisions below are really attempts to shrink the tax
-on that deterministic half.
+The bet behind this project is that the future is putting those two together:
+let the model reason about the route, but give it an interface where the cheap,
+repetitive looking doesn't cost a full thinking step every single time. A lot of
+the design is really just trying to lower the price of that looking.
 
 ---
 
-## The problem that actually mattered: the persistent terminal
+## The thing that actually mattered: keeping the terminal alive
 
-Here's the honest retrospective: **most of the friction in this project had
-nothing to do with the model's knowledge or training.** It came from the
-integration layer — getting MCP and a custom server to give the model a terminal
-that behaves like a terminal.
+Here's the honest version. Most of the trouble in this project had nothing to do
+with how smart the model was. It came from the glue: getting the model a terminal
+that behaves like a real terminal.
 
-A naive "run a command, return the output" tool breaks almost immediately,
-because real assessment work is *stateful*:
+The simplest possible tool, run a command and hand back the output, falls apart
+almost immediately, because real work keeps state:
 
-- `cd` into a directory — the next command has to still be there.
-- `export` a variable, start an `ssh` session, open an `ftp` prompt — the shell
-  has to stay alive and interactive.
-- Keep the *goal* and the accumulated context stable across dozens of steps and
-  context resets.
+- You `cd` somewhere and the next command has to still be there.
+- You start an ssh or ftp session and the shell has to stay open and let you
+  keep typing into it.
+- You have to hold the goal and everything you've learned steady across dozens of
+  steps.
 
-The failure that kicked it all off was dumbly simple: a scan finds a service,
-the model goes to authenticate, and the program asks for a password. A one-shot
-tool has nowhere to *send a keystroke into a running program* — so it hung. It
-hung **even when the password was blank and all it needed was to press Enter.**
-If an empty prompt breaks you, the interface is the problem, not the model.
+The failure that kicked the whole thing off was embarrassingly simple. A scan
+finds a service, the model goes to log in, and the program stops and asks for a
+password. A one-command-at-a-time tool has nowhere to *send a keystroke into a
+program that's already running*, so it just hung. It hung even when there was no
+password and all it needed to do was press Enter. If an empty prompt is enough to
+break you, the problem is the interface, not the model.
 
-Right alongside it was a behavioral trap: the model kept trying to do everything
-in one **"super command"** — scan, pivot, and discover the whole box in a single
-chained line. But the output of each step changes what the next step should be;
-the work is a tight *look → orient → step* loop, not one heroic command. Each of
-these is a place the loop quietly falls apart if the plumbing — and the
-interaction model — is wrong.
-Solving the **persistent terminal session** — a real Bash PTY that survives
-across tool calls, keeps its working directory and environment, handles
-interactive prompts, and holds context over time — was the central engineering
-win of the project.
+Right next to that was a habit problem. Left alone, the model kept trying to do
+everything in one giant command: scan, pivot, and find the flag all in a single
+chained line. But that isn't how it works. What comes back from one step changes
+what the next step should even be. You have to look before you decide. The job is
+a tight loop of look, get your bearings, take one step, look again, not one hero
+command that does it all.
 
-📖 **The full walkthrough is the centerpiece of this debrief:**
+The fix for both was a real, persistent terminal: a Bash shell that stays alive
+between calls, keeps its working directory and environment, lets the model answer
+prompts, and holds its context over time. That was the central win of the
+project, and it's written up in full here:
+
 [`docs/the-persistent-terminal-problem.md`](./docs/the-persistent-terminal-problem.md)
 
 ---
 
-## How it's built
+## How it's put together
 
-Scylla is one controlled strait between a local reasoning model and a disposable
-Kali VM. The model runs on the host; Kali (and the MCP server inside it) runs in
-a VM; they meet over a single authenticated port on a host-only network.
+There's one controlled path between a local model and a throwaway Kali VM. The
+model runs on your machine. Kali, and the small server the model talks to, runs
+inside a VM. They meet over a single locked-down port on a host-only network.
 
 ```
-🖥️  HOST ─ local model (Qwen 3) ──MCP/HTTP+token──▶ 💠 KALI VM ─ Scylla server ─▶ 🐚 bash
+HOST   local model  ---- request + token ---->   KALI VM   small server   --->   bash
 ```
 
-The full topology — host vs. guest, the single crossing, trust boundaries — is
-in [`Architecture.md`](./Architecture.md).
+The full picture, host versus guest, the single crossing, and where the trust
+boundaries sit, is in [`Architecture.md`](./Architecture.md).
 
-### The tool surface that makes the loop work
+### The tools that make the loop work
 
-| Tool | Why it exists |
-|------|---------------|
-| `terminal(command)` | **The default.** Persistent Bash PTY — state survives between calls |
-| `terminal_read()` | Drain output from a still-running command without issuing a new one |
-| `terminal_input(text)` | Answer interactive prompts (passwords, menus) — the thing naive tools can't do |
-| `reset_terminal()` | Escape hatch when a shell gets wedged |
-| `run_diagnostic(name)` | Cheap read-only orientation probes |
-| `run_disposable_command(command)` | Isolated one-shot runs, logged as evidence |
-| `write_project_file` / `read_project_file` | Durable, path-jailed memory for the assessment |
-| `export_evidence(limit)` | Turn the command log into a Markdown evidence trail |
-| `kali_status()` | Where am I, who am I, what's my network |
+| Tool | Why it's there |
+|------|----------------|
+| `terminal(command)` | The default. A Bash shell that keeps its state between calls |
+| `terminal_read()` | Read more output from a command that's still running |
+| `terminal_input(text)` | Answer a prompt (a password, a menu). The thing the naive tool can't do |
+| `reset_terminal()` | Start a clean shell when one gets stuck |
+| `run_diagnostic(name)` | Cheap read-only "where am I" checks |
+| `run_disposable_command(command)` | A clean one-off run, logged as evidence |
+| `write_project_file` / `read_project_file` | Durable notes that outlive the model's short memory |
+| `export_evidence(limit)` | Turn the command log into a readable evidence trail |
+| `kali_status()` | Who am I, where am I, what's my network |
 
-Reference: [`docs/tools.md`](./docs/tools.md).
+Full reference: [`docs/tools.md`](./docs/tools.md).
 
 ---
 
-## What this repo contains
+## What's in here
 
 ```
 Scylla/
-├── mcp-server.py          # The MCP server — the strait between model and VM
-├── SystemPrompt.md        # The operating contract the agent reasons under
-├── Architecture.md        # Topology debrief: host · VM · the one channel
+├── mcp-server.py          # The server the model talks to, sitting between it and the VM
+├── SystemPrompt.md        # The ground rules the agent works under
+├── Architecture.md        # The topology: your machine, the VM, and the one channel between
 ├── README.md              # This write-up
 ├── docs/
-│   ├── the-persistent-terminal-problem.md   # ★ the core engineering story
-│   ├── getting-started.md                    # run-it-yourself walkthrough
-│   └── tools.md                              # MCP tool reference
-├── SECURITY.md · CONTRIBUTING.md · CHANGELOG.md · LICENSE · .gitignore
+│   ├── the-persistent-terminal-problem.md   # the core story, read this one
+│   ├── getting-started.md                    # how to run it yourself
+│   └── tools.md                              # what each tool does
+├── SECURITY.md · CONTRIBUTING.md · CHANGELOG.md · .gitignore
 ```
 
 ---
 
-## Takeaways
+## What we took away
 
-- **Knowledge wasn't the constraint — interface was.** The model could already
-  do the security work; the project was mostly about building a loop it could
-  stay inside.
-- **The persistent terminal was the unlock.** Statefulness (working dir, env,
-  interactive sessions, durable context) is what separates a chat about hacking
-  from an agent that hacks.
-- **Reasoning and traversal want different interfaces.** The model is strongest
-  at the thinking; the open opportunity is making the cheap, deterministic
-  browsing cost less than a full inference step each time.
-- **The frontier is the combination.** Human-like reflexive traversal + machine
-  reasoning, in one loop, is the direction worth chasing.
+- The knowledge was never the bottleneck. The interface was. The model could
+  already do the security work; the project was mostly about building a loop it
+  could stay inside of.
+- Keeping the terminal alive was the unlock. State, like the working directory,
+  an open ssh session, and remembered context, is what separates a chat about
+  hacking from something that actually hacks.
+- Reasoning and looking want different interfaces. The model is best at the
+  thinking. The open problem is making the cheap, repetitive looking cost less
+  than a full reasoning step each time.
+- The interesting direction is the combination: human-style quick looking plus
+  machine-style reasoning, in one loop.
 
 ---
 
 ## Running it yourself
 
-If you want to reproduce the setup on your own authorized lab, the full
-walkthrough — token, bind address, launch, wiring the agent — lives in
+If you want to reproduce this on your own lab, the full walkthrough (token, bind
+address, launch, wiring up the agent) is in
 [`docs/getting-started.md`](./docs/getting-started.md). The short version:
 
 ```bash
@@ -201,12 +204,6 @@ mkdir -p ~/kali-mcp && head -c 32 /dev/urandom | base64 > ~/kali-mcp/token
 python mcp-server.py     # serves http://192.168.56.101:8765/mcp
 ```
 
-Then point an MCP client at that endpoint with the token, load
+Then point your client at that address with the token, load
 [`SystemPrompt.md`](./SystemPrompt.md) as the system prompt, and give it a target
 inside your authorized scope.
-
----
-
-## License
-
-[MIT](./LICENSE).

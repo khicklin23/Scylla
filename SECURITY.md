@@ -14,12 +14,12 @@ Do **not** point Scylla at third-party systems, production infrastructure, or
 any target outside a clearly authorized lab scope. The operating contract in
 [`SystemPrompt.md`](./SystemPrompt.md) instructs the agent to treat only
 user-supplied lab targets as in-scope and to avoid pivoting to unrelated
-reachable systems — but ultimate responsibility rests with the operator.
+reachable systems, but ultimate responsibility rests with the operator.
 
 ## Built-in guardrails
 
 - **Non-destructive validation.** The agent is directed to use the minimum
-  action necessary to establish a vulnerability, and to *record* — not execute —
+  action necessary to establish a vulnerability, and to *record*, not execute,
   destructive proofs (DoS, data corruption, service crashes).
 - **Path jailing.** `write_project_file` / `read_project_file` resolve all paths
   against the assessment root and reject traversal outside it.
@@ -35,7 +35,7 @@ network, behind a host-only / NAT interface, on a VM you can discard.
 
 - Keep the Kali VM on a dedicated, isolated network segment.
 - Rotate the auth token between engagements.
-- Never commit `~/kali-mcp/` or `~/lab-projects/` — they are gitignored by default.
+- Never commit `~/kali-mcp/` or `~/lab-projects/`; they are gitignored by default.
 - Review the command log after each session.
 
 ## Reporting a vulnerability

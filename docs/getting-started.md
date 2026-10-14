@@ -57,7 +57,7 @@ http://<host>:8765/mcp
 
 1. In your MCP client, add the endpoint above and supply the bearer token.
 2. Load [`../SystemPrompt.md`](../SystemPrompt.md) as the agent's system prompt.
-3. Give the agent a target that is inside your authorized lab scope — e.g.
+3. Give the agent a target that is inside your authorized lab scope, e.g.
    *"The target is 192.168.56.120. Find the flag."*
 
 ## 6. Working directory & artifacts
@@ -73,5 +73,5 @@ http://<host>:8765/mcp
 |---------|--------------|
 | `401` / auth errors | Token mismatch between client and `~/kali-mcp/token` |
 | Terminal seems stuck | Call `reset_terminal()` for a fresh shell |
-| File tool rejects a path | Path escaped the assessment root — use a relative path |
+| File tool rejects a path | Path escaped the assessment root; use a relative path |
 | No output from a command | Increase `wait_seconds`, or drain with `terminal_read()` |
