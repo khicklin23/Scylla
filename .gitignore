@@ -1,0 +1,19 @@
+# Runtime state — never commit lab secrets or evidence
+kali-mcp/
+lab-projects/
+token
+*.jsonl
+evidence.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
